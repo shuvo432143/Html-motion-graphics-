@@ -29,13 +29,13 @@ import {
   saveProjects,
   setActiveProjectId,
 } from './services/storageService';
-import { IFrameFrameCaptureEngine } from './services/htmlRendererEngine';
+import { DirectFrameCaptureEngine } from './services/htmlRendererEngine';
 import { videoExportPipeline } from './services/videoEncoder';
 import { SAMPLE_PROJECTS } from './services/projectTemplates';
 import JSZip from 'jszip';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('preview');
   const [projects, setProjects] = useState<RenderProject[]>(() => loadStoredProjects());
   const [activeProjectId, setActiveId] = useState<string>(() => getActiveProjectId());
   const [history, setHistory] = useState<ExportHistoryRecord[]>(() => loadExportHistory());
@@ -46,7 +46,7 @@ export default function App() {
   const [completedRecord, setCompletedRecord] = useState<ExportHistoryRecord | null>(null);
   const [completedBlobUrl, setCompletedBlobUrl] = useState<string | null>(null);
 
-  const captureEngineRef = useRef<IFrameFrameCaptureEngine | null>(null);
+  const captureEngineRef = useRef<DirectFrameCaptureEngine | null>(null);
 
   // Active Project reference
   const currentProject =
@@ -204,7 +204,7 @@ export default function App() {
   const handleStartExport = async (settings: ExportSettings) => {
     setIsRendering(true);
 
-    const engine = new IFrameFrameCaptureEngine();
+    const engine = new DirectFrameCaptureEngine();
     captureEngineRef.current = engine;
 
     try {
@@ -310,6 +310,7 @@ export default function App() {
             project={currentProject}
             onNavigateToExport={() => setActiveTab('export')}
             onNavigateToEditor={() => setActiveTab('editor')}
+            onUpdateProject={handleUpdateProject}
           />
         )}
 

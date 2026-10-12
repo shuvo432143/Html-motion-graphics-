@@ -228,27 +228,49 @@ export const ExportView: React.FC<ExportViewProps> = ({
               </div>
             </div>
 
-            {/* Duration Slider */}
+            {/* Duration Controls */}
             <div>
               <div className="flex items-center justify-between text-xs font-semibold text-slate-300 mb-2">
-                <span>Video Duration: {duration} Seconds</span>
-                <span className="text-slate-400 font-mono">{totalFrames} Total Frames</span>
+                <span>Video Duration:</span>
+                <span className="text-sky-400 font-mono font-bold">{totalFrames} Total Frames ({duration}s)</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                {[5, 10, 15, 30, 60, 120, 300].map((sec) => (
+                  <button
+                    key={sec}
+                    type="button"
+                    onClick={() => setDuration(sec)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold border transition-colors ${
+                      duration === sec
+                        ? 'bg-sky-600 border-sky-500 text-white'
+                        : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                    }`}
+                  >
+                    {sec >= 60 ? `${sec / 60}m` : `${sec}s`}
+                  </button>
+                ))}
+                <div className="flex items-center gap-1 ml-auto bg-slate-950 border border-slate-800 rounded-lg px-2 py-1">
+                  <span className="text-[11px] text-slate-400">Custom:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={1800}
+                    value={duration}
+                    onChange={(e) => setDuration(Math.max(1, Number(e.target.value)))}
+                    className="w-16 bg-slate-900 text-white text-center rounded px-1.5 py-0.5 font-mono text-xs focus:outline-none"
+                  />
+                  <span className="text-[11px] text-slate-400">sec</span>
+                </div>
               </div>
               <input
                 type="range"
-                min={3}
-                max={60}
+                min={1}
+                max={300}
                 step={1}
                 value={duration}
                 onChange={(e) => setDuration(Number(e.target.value))}
                 className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500"
               />
-              <div className="flex justify-between text-[11px] text-slate-500 mt-1 font-mono">
-                <span>3s (Test)</span>
-                <span>10s</span>
-                <span>30s</span>
-                <span>60s (Long)</span>
-              </div>
             </div>
 
             {/* Filename */}

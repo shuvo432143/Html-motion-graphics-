@@ -6,7 +6,7 @@ export const SAMPLE_PROJECTS: RenderProject[] = [
     name: 'YouTube 3D Football Club Valuation Comparison',
     description: 'Cinematic 3D comparison scene with metallic podiums, rotating club emblems, floating revenue stats, dynamic camera pan, and stadium lighting.',
     templateCategory: '3d_comparison',
-    durationSeconds: 10,
+    durationSeconds: 15,
     fps: 30,
     resolutionId: '1080p_16_9',
     aspectRatio: '16:9',
@@ -20,17 +20,22 @@ export const SAMPLE_PROJECTS: RenderProject[] = [
     <div class="watermark">HTML VIDEO STUDIO 4K</div>
   </div>
 </div>`,
-    cssContent: `body {
+    cssContent: `* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
   margin: 0;
+  padding: 0;
+  border: none;
   background: #060913;
   color: #fff;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   overflow: hidden;
+  width: 100vw;
+  height: 100vh;
 }
 #studio-viewport {
   position: relative;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -43,37 +48,37 @@ export const SAMPLE_PROJECTS: RenderProject[] = [
 }
 .hud-overlay {
   position: absolute;
-  top: 32px;
-  left: 48px;
-  right: 48px;
+  top: 24px;
+  left: 36px;
+  right: 36px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   pointer-events: none;
 }
 .header-tag {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 800;
-  letter-spacing: 3px;
+  letter-spacing: 2px;
   color: #f1f5f9;
   text-shadow: 0 4px 16px rgba(0,0,0,0.8);
   border-left: 4px solid #38bdf8;
-  padding-left: 14px;
+  padding-left: 12px;
 }
 .watermark {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 2px;
   color: #94a3b8;
   opacity: 0.8;
 }`,
-    jsContent: `// High-Performance 3D Comparison Scene with Deterministic Rendering
+    jsContent: `// High-Performance 3D Comparison Scene with Deterministic & Continuous Animation
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
 
 function resize() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+  canvas.width = window.innerWidth || 1920;
+  canvas.height = window.innerHeight || 1080;
 }
 window.addEventListener('resize', resize);
 resize();
@@ -98,6 +103,7 @@ for (let i = 0; i < 70; i++) {
 }
 
 function renderFrame(timeMs) {
+  if (canvas.width <= 0 || canvas.height <= 0) resize();
   const t = timeMs / 1000;
   const w = canvas.width;
   const h = canvas.height;
@@ -167,10 +173,8 @@ function renderFrame(timeMs) {
     ctx.stroke();
   }
 
-  // Camera panning effect
-  const camProgress = Math.min(1, t / 8);
-  const camEase = camProgress * (2 - camProgress);
-  const camShiftX = (w * 0.08) * (1 - camEase);
+  // Camera panning effect (continuous wave)
+  const camShiftX = (w * 0.06) * Math.sin(t * 0.5);
 
   // 3. Render 3D Podiums and Pillars
   const numClubs = CLUBS.length;
@@ -178,9 +182,9 @@ function renderFrame(timeMs) {
 
   CLUBS.forEach((club, index) => {
     // Reveal timing per club
-    const clubDelay = index * 0.8;
+    const clubDelay = index * 0.6;
     const clubTime = Math.max(0, t - clubDelay);
-    const growProgress = Math.min(1, clubTime / 1.5);
+    const growProgress = Math.min(1, clubTime / 1.2);
     const easeGrow = 1 - Math.pow(1 - growProgress, 3);
 
     const targetHeight = (club.value / 1200) * (h * 0.42);
@@ -229,7 +233,7 @@ function renderFrame(timeMs) {
 
     // Rank Medal on Pillar
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 22px system-ui';
+    ctx.font = 'bold 22px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('#' + (numClubs - index), centerX, floorY - 26);
 
@@ -254,7 +258,7 @@ function renderFrame(timeMs) {
 
     // Crest text
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 18px system-ui';
+    ctx.font = 'bold 18px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(club.crest, 0, 0);
@@ -264,7 +268,7 @@ function renderFrame(timeMs) {
     const currentValue = Math.round(club.value * easeGrow);
     ctx.save();
     ctx.fillStyle = '#f8fafc';
-    ctx.font = '800 24px system-ui';
+    ctx.font = '800 24px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.shadowColor = club.color;
     ctx.shadowBlur = 12;
@@ -272,28 +276,32 @@ function renderFrame(timeMs) {
 
     // Club Name Label
     ctx.fillStyle = '#94a3b8';
-    ctx.font = '600 15px system-ui';
+    ctx.font = '600 15px system-ui, sans-serif';
     ctx.shadowBlur = 0;
     ctx.fillText(club.name, centerX, floorY + 36);
     ctx.restore();
   });
 }
 
-// Deterministic hook or standard animation loop
-if (window.__HTML_VIDEO_STUDIO__ && window.__HTML_VIDEO_STUDIO__.isControlled()) {
-  // Handled via message or tick event
-} else {
-  let start = performance.now();
-  function loop(now) {
+// Expose directly on window for frame capture engine
+window.renderFrame = renderFrame;
+
+// Animation loop for preview
+let start = performance.now();
+function loop(now) {
+  if (!window.__HTML_VIDEO_STUDIO__ || !window.__HTML_VIDEO_STUDIO__.isControlled()) {
     renderFrame(now - start);
-    requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
 }
+requestAnimationFrame(loop);
 
 window.addEventListener('htmlVideoStudioTick', function(e) {
   renderFrame(e.detail.timeMs);
 });
+
+// Render initial frame immediately
+renderFrame(0);
 `
   },
   {
@@ -301,7 +309,7 @@ window.addEventListener('htmlVideoStudioTick', function(e) {
     name: 'Three.js 3D Golden Trophy & Lighting',
     description: 'Physically based WebGL 3D trophy with metallic gold shading, rotating camera orbit, studio 3-point lighting, ground shadows, and sparkle flares.',
     templateCategory: 'threejs',
-    durationSeconds: 8,
+    durationSeconds: 15,
     fps: 30,
     resolutionId: '1080p_16_9',
     aspectRatio: '16:9',
@@ -313,56 +321,61 @@ window.addEventListener('htmlVideoStudioTick', function(e) {
   <h1>GLOBAL EXCELLENCE TROPHY</h1>
   <p>PBR METAL SHADING & STUDIO LIGHTING</p>
 </div>`,
-    cssContent: `body {
+    cssContent: `* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
   margin: 0;
+  padding: 0;
+  border: none;
   overflow: hidden;
   background: #030712;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-}
-#webgl-container {
   width: 100vw;
   height: 100vh;
 }
+#webgl-container {
+  width: 100%;
+  height: 100%;
+}
 .award-card {
   position: absolute;
-  bottom: 40px;
+  bottom: 30px;
   left: 50%;
   transform: translateX(-50%);
   text-align: center;
   pointer-events: none;
   background: rgba(15, 23, 42, 0.7);
   backdrop-filter: blur(8px);
-  padding: 16px 36px;
+  padding: 14px 32px;
   border-radius: 12px;
   border: 1px solid rgba(251, 191, 36, 0.25);
 }
 .award-card h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 800;
-  letter-spacing: 3px;
+  letter-spacing: 2px;
   color: #fbbf24;
 }
 .award-card p {
   margin: 4px 0 0;
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 2px;
   color: #94a3b8;
 }`,
-    jsContent: `// Robust WebGL 3D Shader Rendering without external CDN dependency
-const container = document.getElementById('webgl-container');
+    jsContent: `const container = document.getElementById('webgl-container');
 const canvas = document.createElement('canvas');
 container.appendChild(canvas);
 const ctx = canvas.getContext('2d');
 
 function resize() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+  canvas.width = window.innerWidth || 1920;
+  canvas.height = window.innerHeight || 1080;
 }
 window.addEventListener('resize', resize);
 resize();
 
 function render3DTrophy(timeMs) {
+  if (canvas.width <= 0 || canvas.height <= 0) resize();
   const t = timeMs / 1000;
   const w = canvas.width;
   const h = canvas.height;
@@ -381,7 +394,6 @@ function render3DTrophy(timeMs) {
 
   // Floor pedestal
   const pedW = 280;
-  const pedH = 50;
   const pGrad = ctx.createLinearGradient(cx - pedW/2, cy + 120, cx + pedW/2, cy + 120);
   pGrad.addColorStop(0, '#292524');
   pGrad.addColorStop(0.5, '#78716c');
@@ -397,7 +409,6 @@ function render3DTrophy(timeMs) {
   // 3D Rotational Orbit
   const rotAngle = t * 1.4;
   const cos = Math.cos(rotAngle);
-  const sin = Math.sin(rotAngle);
 
   // Trophy Cup Body with Metallic Gradient
   const cupGrad = ctx.createLinearGradient(cx - 90 * cos, cy - 80, cx + 90 * cos, cy + 60);
@@ -462,9 +473,13 @@ function render3DTrophy(timeMs) {
   }
 }
 
+window.renderFrame = render3DTrophy;
+
 let start = performance.now();
 function loop(now) {
-  render3DTrophy(now - start);
+  if (!window.__HTML_VIDEO_STUDIO__ || !window.__HTML_VIDEO_STUDIO__.isControlled()) {
+    render3DTrophy(now - start);
+  }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
@@ -472,6 +487,8 @@ requestAnimationFrame(loop);
 window.addEventListener('htmlVideoStudioTick', function(e) {
   render3DTrophy(e.detail.timeMs);
 });
+
+render3DTrophy(0);
 `
   },
   {
@@ -479,7 +496,7 @@ window.addEventListener('htmlVideoStudioTick', function(e) {
     name: 'Dynamic Tech Valuation Bar Chart Race',
     description: 'High-energy financial race with smooth rank easing, glowing gradient progress bars, animated currency counters, and dynamic leaderboard.',
     templateCategory: 'canvas',
-    durationSeconds: 12,
+    durationSeconds: 20,
     fps: 30,
     resolutionId: '1080p_16_9',
     aspectRatio: '16:9',
@@ -489,36 +506,42 @@ window.addEventListener('htmlVideoStudioTick', function(e) {
     htmlContent: `<div class="race-wrapper">
   <canvas id="race-canvas"></canvas>
 </div>`,
-    cssContent: `body {
+    cssContent: `* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
   margin: 0;
+  padding: 0;
+  border: none;
   background: #090d16;
   color: #fff;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   overflow: hidden;
-}
-.race-wrapper {
   width: 100vw;
   height: 100vh;
+}
+.race-wrapper {
+  width: 100%;
+  height: 100%;
 }`,
     jsContent: `const canvas = document.getElementById('race-canvas');
 const ctx = canvas.getContext('2d');
 
 function resize() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+  canvas.width = window.innerWidth || 1920;
+  canvas.height = window.innerHeight || 1080;
 }
 window.addEventListener('resize', resize);
 resize();
 
 const DATA = [
-  { name: 'Apple Inc.', color: '#06b6d4', baseVal: 1800, growth: 220 },
-  { name: 'Microsoft', color: '#3b82f6', baseVal: 1600, growth: 240 },
-  { name: 'Nvidia Corp.', color: '#10b981', baseVal: 400, growth: 420 },
-  { name: 'Alphabet / Google', color: '#f59e0b', baseVal: 1200, growth: 180 },
-  { name: 'Amazon', color: '#ec4899', baseVal: 1100, growth: 190 }
+  { name: 'Apple Inc.', color: '#06b6d4', baseVal: 1800, growth: 120 },
+  { name: 'Microsoft', color: '#3b82f6', baseVal: 1600, growth: 140 },
+  { name: 'Nvidia Corp.', color: '#10b981', baseVal: 400, growth: 220 },
+  { name: 'Alphabet / Google', color: '#f59e0b', baseVal: 1200, growth: 110 },
+  { name: 'Amazon', color: '#ec4899', baseVal: 1100, growth: 115 }
 ];
 
 function render(timeMs) {
+  if (canvas.width <= 0 || canvas.height <= 0) resize();
   const t = timeMs / 1000;
   const w = canvas.width;
   const h = canvas.height;
@@ -530,25 +553,25 @@ function render(timeMs) {
 
   // Title
   ctx.fillStyle = '#f8fafc';
-  ctx.font = '800 28px system-ui';
+  ctx.font = '800 28px system-ui, sans-serif';
   ctx.fillText('GLOBAL TECH VALUATION RACE ($B)', 60, 70);
 
-  const year = 2020 + Math.floor(t / 2);
+  const year = 2020 + Math.floor((t % 15) / 2.5);
   ctx.fillStyle = '#38bdf8';
-  ctx.font = '800 48px system-ui';
+  ctx.font = '800 44px system-ui, sans-serif';
   ctx.textAlign = 'right';
-  ctx.fillText('YEAR ' + year, w - 60, 80);
+  ctx.fillText('YEAR ' + year, w - 60, 75);
   ctx.textAlign = 'left';
 
   // Calculate dynamic values
   const currentItems = DATA.map(item => ({
     ...item,
-    val: Math.round(item.baseVal + item.growth * t * 0.8)
+    val: Math.round(item.baseVal + item.growth * (t % 20) * 1.2)
   })).sort((a, b) => b.val - a.val);
 
-  const startY = 140;
-  const barHeight = 48;
-  const gap = 24;
+  const startY = 130;
+  const barHeight = 44;
+  const gap = 20;
   const maxVal = Math.max(...currentItems.map(d => d.val), 3500);
 
   currentItems.forEach((item, rank) => {
@@ -557,8 +580,8 @@ function render(timeMs) {
 
     // Label
     ctx.fillStyle = '#e2e8f0';
-    ctx.font = '700 18px system-ui';
-    ctx.fillText('#' + (rank + 1) + ' ' + item.name, 60, y + 30);
+    ctx.font = '700 17px system-ui, sans-serif';
+    ctx.fillText('#' + (rank + 1) + ' ' + item.name, 60, y + 28);
 
     // Bar background
     ctx.fillStyle = 'rgba(255,255,255,0.06)';
@@ -576,14 +599,18 @@ function render(timeMs) {
 
     // Value text
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 20px system-ui';
-    ctx.fillText('$' + item.val + 'B', 280 + barWidth + 16, y + 32);
+    ctx.font = 'bold 18px system-ui, sans-serif';
+    ctx.fillText('$' + item.val + 'B', 280 + barWidth + 16, y + 29);
   });
 }
 
+window.renderFrame = render;
+
 let start = performance.now();
 function loop(now) {
-  render(now - start);
+  if (!window.__HTML_VIDEO_STUDIO__ || !window.__HTML_VIDEO_STUDIO__.isControlled()) {
+    render(now - start);
+  }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
@@ -591,6 +618,8 @@ requestAnimationFrame(loop);
 window.addEventListener('htmlVideoStudioTick', function(e) {
   render(e.detail.timeMs);
 });
+
+render(0);
 `
   },
   {
@@ -598,7 +627,7 @@ window.addEventListener('htmlVideoStudioTick', function(e) {
     name: 'Canvas Cyber Nebula 1,200 Particle Core',
     description: 'Generative mathematical particle vortex with harmonic spirals, depth shading, neon cyan-magenta glow, and deterministic frame stepping.',
     templateCategory: 'canvas',
-    durationSeconds: 10,
+    durationSeconds: 15,
     fps: 30,
     resolutionId: '1080p_16_9',
     aspectRatio: '16:9',
@@ -606,22 +635,27 @@ window.addEventListener('htmlVideoStudioTick', function(e) {
     updatedAt: Date.now(),
     assets: [],
     htmlContent: `<canvas id="nebula"></canvas>`,
-    cssContent: `body {
+    cssContent: `* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
   margin: 0;
+  padding: 0;
+  border: none;
   background: #020204;
   overflow: hidden;
-}
-#nebula {
   width: 100vw;
   height: 100vh;
+}
+#nebula {
+  width: 100%;
+  height: 100%;
   display: block;
 }`,
     jsContent: `const canvas = document.getElementById('nebula');
 const ctx = canvas.getContext('2d');
 
 function resize() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+  canvas.width = window.innerWidth || 1920;
+  canvas.height = window.innerHeight || 1080;
 }
 window.addEventListener('resize', resize);
 resize();
@@ -639,6 +673,7 @@ for (let i = 0; i < NUM_PARTICLES; i++) {
 }
 
 function render(timeMs) {
+  if (canvas.width <= 0 || canvas.height <= 0) resize();
   const t = timeMs / 1000;
   const w = canvas.width;
   const h = canvas.height;
@@ -661,9 +696,13 @@ function render(timeMs) {
   });
 }
 
+window.renderFrame = render;
+
 let start = performance.now();
 function loop(now) {
-  render(now - start);
+  if (!window.__HTML_VIDEO_STUDIO__ || !window.__HTML_VIDEO_STUDIO__.isControlled()) {
+    render(now - start);
+  }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
@@ -671,6 +710,8 @@ requestAnimationFrame(loop);
 window.addEventListener('htmlVideoStudioTick', function(e) {
   render(e.detail.timeMs);
 });
+
+render(0);
 `
   },
   {
@@ -678,7 +719,7 @@ window.addEventListener('htmlVideoStudioTick', function(e) {
     name: 'CSS 3D Kinetic Typography & Gradient Mesh',
     description: 'Pure CSS @keyframes transform cards with moving neon gradient mesh, responsive layout, and deterministic Web Animations API control.',
     templateCategory: 'css_motion',
-    durationSeconds: 8,
+    durationSeconds: 12,
     fps: 30,
     resolutionId: '1080p_16_9',
     aspectRatio: '16:9',
@@ -698,7 +739,8 @@ window.addEventListener('htmlVideoStudioTick', function(e) {
     </div>
   </div>
 </div>`,
-    cssContent: `@keyframes rotateMesh {
+    cssContent: `* { box-sizing: border-box; margin: 0; padding: 0; }
+@keyframes rotateMesh {
   0% { transform: rotate(0deg) scale(1); }
   50% { transform: rotate(180deg) scale(1.3); }
   100% { transform: rotate(360deg) scale(1); }
@@ -710,15 +752,19 @@ window.addEventListener('htmlVideoStudioTick', function(e) {
 }
 body {
   margin: 0;
+  padding: 0;
+  border: none;
   background: #090e17;
   color: #fff;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   overflow: hidden;
+  width: 100vw;
+  height: 100vh;
 }
 .stage {
   position: relative;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;

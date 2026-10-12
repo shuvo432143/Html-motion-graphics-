@@ -14,7 +14,6 @@ export const INJECTED_DETERMINISTIC_SCRIPT = `
   var rafCallbacks = [];
   var rafIdCounter = 1;
   var isControlledMode = false;
-  var baseRealDate = Date.now();
 
   window.__HTML_VIDEO_STUDIO__ = {
     getVirtualTime: function() { return virtualTimeMs; },
@@ -48,7 +47,15 @@ export const INJECTED_DETERMINISTIC_SCRIPT = `
       });
       window.dispatchEvent(event);
 
-      // 3. Execute queued requestAnimationFrame callbacks
+      // 3. Direct function hook if user declared window.renderFrame or window.onStudioTick
+      if (typeof window.renderFrame === 'function') {
+        try { window.renderFrame(timeMs); } catch(e) {}
+      }
+      if (typeof window.onStudioTick === 'function') {
+        try { window.onStudioTick(timeMs, frameIndex); } catch(e) {}
+      }
+
+      // 4. Execute queued requestAnimationFrame callbacks
       var currentCallbacks = rafCallbacks.slice();
       rafCallbacks = [];
       for (var j = 0; j < currentCallbacks.length; j++) {
@@ -59,7 +66,7 @@ export const INJECTED_DETERMINISTIC_SCRIPT = `
         }
       }
 
-      // 4. Update any standard HTML5 video elements if present
+      // 5. Update any standard HTML5 video elements if present
       var videos = document.querySelectorAll('video');
       for (var v = 0; v < videos.length; v++) {
         try {
@@ -118,6 +125,14 @@ export const INJECTED_DETERMINISTIC_SCRIPT = `
     }, '*');
   });
 
+  // Ensure canvas resize handles properly
+  window.addEventListener('load', function() {
+    window.dispatchEvent(new Event('resize'));
+    if (typeof window.renderFrame === 'function') {
+      try { window.renderFrame(0); } catch(e) {}
+    }
+  });
+
   console.log('[HTML Video Studio] Deterministic Engine Ready');
 })();
 `;
@@ -132,9 +147,21 @@ export function buildRenderableHtml(
   controlledMode: boolean = false,
   fps: number = 30
 ): string {
-  // If the user's HTML is a full document, inject into <head> or at start
   const scriptTag = `<script>\nwindow.__HTML_VIDEO_STUDIO_FPS__ = ${fps};\n${INJECTED_DETERMINISTIC_SCRIPT}\n${controlledMode ? 'window.__HTML_VIDEO_STUDIO__.setControlledMode(true);' : ''}\n</script>`;
-  const styleTag = cssContent ? `<style>\n${cssContent}\n</style>` : '';
+  const resetCss = `
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      border: none !important;
+      outline: none !important;
+      width: 100% !important;
+      height: 100% !important;
+      overflow: hidden !important;
+      background: #000;
+    }
+  `;
+  const styleTag = `<style>\n${resetCss}\n${cssContent}\n</style>`;
   const userScriptTag = jsContent ? `<script>\n${jsContent}\n</script>` : '';
 
   if (htmlContent.includes('<head>') || htmlContent.includes('<html>')) {
@@ -160,18 +187,7 @@ export function buildRenderableHtml(
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Render Document</title>
   ${scriptTag}
-  <style>
-    * { box-sizing: border-box; }
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #000;
-    }
-    ${cssContent}
-  </style>
+  ${styleTag}
 </head>
 <body>
   ${htmlContent}

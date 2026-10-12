@@ -1,19 +1,27 @@
+import html2canvas from 'html2canvas';
 import { buildRenderableHtml } from './deterministicTimeline';
 
 export interface FrameCaptureEngine {
-  init(html: string, css: string, js: string, width: number, height: number, fps: number): Promise<void>;
+  init(
+    html: string,
+    css: string,
+    js: string,
+    width: number,
+    height: number,
+    fps: number,
+    existingIframe?: HTMLIFrameElement | null
+  ): Promise<HTMLIFrameElement>;
   captureFrame(timeMs: number, frameIndex: number): Promise<HTMLCanvasElement | ImageBitmap>;
   destroy(): void;
 }
 
-export class IFrameFrameCaptureEngine implements FrameCaptureEngine {
+export class DirectFrameCaptureEngine implements FrameCaptureEngine {
   private iframe: HTMLIFrameElement | null = null;
-  private offscreenContainer: HTMLDivElement | null = null;
+  private masterCanvas: HTMLCanvasElement | null = null;
+  private masterCtx: CanvasRenderingContext2D | null = null;
   private width: number = 1920;
   private height: number = 1080;
-  private fps: number = 30;
-  private renderCanvas: HTMLCanvasElement | null = null;
-  private renderCtx: CanvasRenderingContext2D | null = null;
+  private isExternalIframe: boolean = false;
 
   async init(
     html: string,
@@ -21,54 +29,71 @@ export class IFrameFrameCaptureEngine implements FrameCaptureEngine {
     js: string,
     width: number,
     height: number,
-    fps: number
-  ): Promise<void> {
+    fps: number,
+    existingIframe?: HTMLIFrameElement | null
+  ): Promise<HTMLIFrameElement> {
     this.width = width;
     this.height = height;
-    this.fps = fps;
 
     this.destroy();
 
-    // Create offscreen container
-    this.offscreenContainer = document.createElement('div');
-    this.offscreenContainer.style.position = 'fixed';
-    this.offscreenContainer.style.left = '-99999px';
-    this.offscreenContainer.style.top = '-99999px';
-    this.offscreenContainer.style.width = `${width}px`;
-    this.offscreenContainer.style.height = `${height}px`;
-    this.offscreenContainer.style.overflow = 'hidden';
-    this.offscreenContainer.style.pointerEvents = 'none';
-    this.offscreenContainer.style.zIndex = '-9999';
-    document.body.appendChild(this.offscreenContainer);
+    this.masterCanvas = document.createElement('canvas');
+    this.masterCanvas.width = width;
+    this.masterCanvas.height = height;
+    this.masterCtx = this.masterCanvas.getContext('2d', { willReadFrequently: true });
+    if (this.masterCtx) {
+      this.masterCtx.imageSmoothingEnabled = true;
+      this.masterCtx.imageSmoothingQuality = 'high';
+    }
 
+    if (existingIframe && existingIframe.contentDocument) {
+      this.isExternalIframe = true;
+      this.iframe = existingIframe;
+      // Setup deterministic mode on existing visible iframe
+      const win = existingIframe.contentWindow as any;
+      if (win && win.__HTML_VIDEO_STUDIO__) {
+        win.__HTML_VIDEO_STUDIO__.setControlledMode(true);
+        win.__HTML_VIDEO_STUDIO_FPS__ = fps;
+      }
+      return this.iframe;
+    }
+
+    // Otherwise create dedicated visible rendering frame
+    this.isExternalIframe = false;
     this.iframe = document.createElement('iframe');
-    this.iframe.width = `${width}px`;
-    this.iframe.height = `${height}px`;
+    this.iframe.style.position = 'fixed';
+    this.iframe.style.top = '0';
+    this.iframe.style.left = '0';
     this.iframe.style.width = `${width}px`;
     this.iframe.style.height = `${height}px`;
+    this.iframe.style.zIndex = '-999';
+    this.iframe.style.opacity = '0.01';
     this.iframe.style.border = 'none';
-    this.iframe.style.display = 'block';
-    this.offscreenContainer.appendChild(this.iframe);
-
-    this.renderCanvas = document.createElement('canvas');
-    this.renderCanvas.width = width;
-    this.renderCanvas.height = height;
-    this.renderCtx = this.renderCanvas.getContext('2d', { willReadFrequently: true });
+    this.iframe.style.pointerEvents = 'none';
+    document.body.appendChild(this.iframe);
 
     const fullHtml = buildRenderableHtml(html, css, js, true, fps);
 
-    // Wait for iframe load
     await new Promise<void>((resolve) => {
       if (!this.iframe) return resolve();
       this.iframe.onload = () => {
-        // Small delay to ensure WebGL/Canvas context is fully ready
-        setTimeout(resolve, 150);
+        setTimeout(resolve, 200);
       };
       this.iframe.srcdoc = fullHtml;
     });
 
-    // Give iframe a moment to execute initial scripts
-    await new Promise((r) => setTimeout(r, 100));
+    if (this.iframe && this.iframe.contentWindow) {
+      try {
+        const win = this.iframe.contentWindow as any;
+        win.dispatchEvent(new Event('resize'));
+        if (win.__HTML_VIDEO_STUDIO__ && typeof win.__HTML_VIDEO_STUDIO__.stepTo === 'function') {
+          win.__HTML_VIDEO_STUDIO__.stepTo(0, 0);
+        }
+      } catch (e) {}
+    }
+
+    await new Promise((r) => setTimeout(r, 150));
+    return this.iframe!;
   }
 
   async captureFrame(timeMs: number, frameIndex: number): Promise<HTMLCanvasElement | ImageBitmap> {
@@ -79,54 +104,71 @@ export class IFrameFrameCaptureEngine implements FrameCaptureEngine {
     const win = this.iframe.contentWindow as any;
     const doc = this.iframe.contentDocument;
 
-    // 1. Advance deterministic clock inside iframe
+    // 1. Step deterministic time in iframe
     if (win.__HTML_VIDEO_STUDIO__ && typeof win.__HTML_VIDEO_STUDIO__.stepTo === 'function') {
       win.__HTML_VIDEO_STUDIO__.stepTo(timeMs, frameIndex);
     }
 
-    // 2. Locate any canvas in the document
-    const stageCanvas = doc ? doc.querySelector('canvas') : null;
+    if (!doc || !this.masterCtx || !this.masterCanvas) {
+      throw new Error('Render context unavailable');
+    }
 
-    if (stageCanvas && stageCanvas.width > 0 && stageCanvas.height > 0) {
-      // If the stage canvas has matching or native resolution, grab it directly!
-      try {
-        if ('createImageBitmap' in window) {
-          const bmp = await createImageBitmap(stageCanvas);
-          return bmp;
+    this.masterCtx.clearRect(0, 0, this.width, this.height);
+
+    // 2. Check for stage canvas (WebGL, 2D, Three.js)
+    const stageCanvas = doc.querySelector('canvas') as HTMLCanvasElement | null;
+    let canvasDrawn = false;
+
+    if (stageCanvas) {
+      // Ensure canvas has valid dimensions
+      if (stageCanvas.width <= 0 || stageCanvas.height <= 0) {
+        stageCanvas.width = win.innerWidth || this.width;
+        stageCanvas.height = win.innerHeight || this.height;
+        if (win.renderFrame) {
+          try { win.renderFrame(timeMs); } catch (e) {}
         }
-      } catch (err) {
-        // Fallback to 2D context copy
       }
 
-      if (this.renderCtx && this.renderCanvas) {
-        this.renderCtx.clearRect(0, 0, this.width, this.height);
-        this.renderCtx.drawImage(stageCanvas, 0, 0, this.width, this.height);
-        return this.renderCanvas;
+      if (stageCanvas.width > 0 && stageCanvas.height > 0) {
+        try {
+          this.masterCtx.drawImage(stageCanvas, 0, 0, this.width, this.height);
+          canvasDrawn = true;
+        } catch (err) {
+          console.warn('[HTML Video Studio] Canvas draw failed:', err);
+        }
       }
     }
 
-    // 3. Fallback: Draw through canvas or html2canvas proxy
-    if (this.renderCtx && this.renderCanvas) {
-      // Draw background and placeholder
-      this.renderCtx.fillStyle = '#0f172a';
-      this.renderCtx.fillRect(0, 0, this.width, this.height);
-      this.renderCtx.fillStyle = '#ffffff';
-      this.renderCtx.font = '32px sans-serif';
-      this.renderCtx.fillText(`Frame ${frameIndex} (${Math.round(timeMs)}ms)`, 40, 60);
-      return this.renderCanvas;
+    // 3. If there are DOM elements (or no canvas was drawn), capture DOM using html2canvas
+    if (!canvasDrawn && doc.body) {
+      try {
+        const domCanvas = await html2canvas(doc.body, {
+          width: win.innerWidth || this.width,
+          height: win.innerHeight || this.height,
+          scale: this.width / (win.innerWidth || this.width),
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#000000',
+        });
+        this.masterCtx.drawImage(domCanvas, 0, 0, this.width, this.height);
+        canvasDrawn = true;
+      } catch (domErr) {
+        console.warn('[HTML Video Studio] html2canvas capture failed:', domErr);
+      }
     }
 
-    throw new Error('Unable to capture frame bitmap');
+    // 4. Return the rendered masterCanvas directly with crisp zero-border output
+    return this.masterCanvas;
   }
 
   destroy(): void {
-    if (this.iframe && this.offscreenContainer) {
-      this.iframe.srcdoc = 'about:blank';
-      this.offscreenContainer.remove();
-      this.iframe = null;
-      this.offscreenContainer = null;
+    if (this.iframe && !this.isExternalIframe) {
+      this.iframe.remove();
     }
-    this.renderCanvas = null;
-    this.renderCtx = null;
+    this.iframe = null;
+    this.masterCanvas = null;
+    this.masterCtx = null;
   }
 }
+
+export const directFrameCaptureEngine = new DirectFrameCaptureEngine();
