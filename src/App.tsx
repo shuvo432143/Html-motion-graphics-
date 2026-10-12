@@ -1,6 +1,6 @@
 /**
- * HTML to MP4 Video Converter — Mobile Edition
- * Simple, fast, edge-to-edge deterministic frame scanning & MP4 video exporter.
+ * HTML to MP4 Video Converter — Mobile Full-Script Edition
+ * Simple, fast, edge-to-edge frame scanning & MP4 video exporter.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -11,33 +11,35 @@ import {
   Code,
   Play,
   Pause,
-  RotateCcw,
   Download,
   CheckCircle2,
   XCircle,
-  Sparkles,
-  Settings,
-  ChevronDown,
-  ChevronUp,
+  Copy,
+  Check,
+  Maximize2,
+  Minimize2,
+  RefreshCw,
+  FileText,
+  Sliders,
 } from 'lucide-react';
 import { DirectFrameCaptureEngine } from './services/htmlRendererEngine';
 import { videoExportPipeline } from './services/videoEncoder';
 import { buildRenderableHtml } from './services/deterministicTimeline';
 import { RESOLUTION_PRESETS } from './constants/resolutions';
 import { AspectRatio, ExportSettings, FrameRate, RenderJobProgress, ResolutionConfig } from './types';
-import { SAMPLE_PROJECTS } from './services/projectTemplates';
+import { DEFAULT_FULL_HTML_SCRIPT } from './services/projectTemplates';
 
 export default function App() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const fullViewerFileInputRef = useRef<HTMLInputElement>(null);
 
-  // HTML Project State
-  const [htmlCode, setHtmlCode] = useState<string>(() => SAMPLE_PROJECTS[0].htmlContent);
-  const [cssCode, setCssCode] = useState<string>(() => SAMPLE_PROJECTS[0].cssContent);
-  const [jsCode, setJsCode] = useState<string>(() => SAMPLE_PROJECTS[0].jsContent);
-  const [showCodeEditor, setShowCodeEditor] = useState<boolean>(false);
+  // Full Script State (Single complete HTML document)
+  const [fullHtmlCode, setFullHtmlCode] = useState<string>(() => DEFAULT_FULL_HTML_SCRIPT);
+  const [isFullViewerOpen, setIsFullViewerOpen] = useState<boolean>(false);
+  const [copiedCode, setCopiedCode] = useState<boolean>(false);
 
-  // Settings State (Default to 46s as requested)
+  // Video Settings (Default: 46 seconds as requested)
   const [duration, setDuration] = useState<number>(46);
   const [fps, setFps] = useState<FrameRate>(30);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
@@ -47,7 +49,7 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [currentTimeMs, setCurrentTimeMs] = useState<number>(0);
 
-  // Conversion / Scanning State
+  // Scanning / Rendering State
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [scanProgress, setScanProgress] = useState<RenderJobProgress | null>(null);
   const [completedVideoUrl, setCompletedVideoUrl] = useState<string | null>(null);
@@ -57,12 +59,12 @@ export default function App() {
   const frameIntervalMs = 1000 / fps;
   const totalFrames = Math.max(1, Math.round(duration * fps));
 
-  // Build bundled HTML
-  const bundledHtml = buildRenderableHtml(htmlCode, cssCode, jsCode, isScanning, fps);
+  // Build Bundled Document from Full Script
+  const bundledHtml = buildRenderableHtml(fullHtmlCode, '', '', isScanning, fps);
 
   // Live Playback Loop
   useEffect(() => {
-    if (isScanning || completedVideoUrl) return;
+    if (isScanning || completedVideoUrl || isFullViewerOpen) return;
 
     let animId: number;
     let lastTime = performance.now();
@@ -85,7 +87,7 @@ export default function App() {
 
     animId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animId);
-  }, [isPlaying, totalDurationMs, isScanning, completedVideoUrl]);
+  }, [isPlaying, totalDurationMs, isScanning, completedVideoUrl, isFullViewerOpen]);
 
   // Tick the live iframe
   useEffect(() => {
@@ -104,47 +106,44 @@ export default function App() {
     } catch (e) {}
   }, [currentTimeMs, frameIntervalMs, fps, isScanning]);
 
-  // Handle HTML File Upload
+  // Handle Full Script File Upload (.html)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     try {
       const text = await file.text();
-      let extractedHtml = text;
-      let extractedCss = '';
-      let extractedJs = '';
-
-      const styleMatches = text.match(/<style[^>]*>([\s\S]*?)<\/style>/gi);
-      if (styleMatches) {
-        extractedCss = styleMatches.map((m) => m.replace(/<style[^>]*>|<\/style>/gi, '')).join('\n');
-      }
-
-      const scriptMatches = text.match(/<script[^>]*>([\s\S]*?)<\/script>/gi);
-      if (scriptMatches) {
-        extractedJs = scriptMatches
-          .filter((m) => !m.includes('src='))
-          .map((m) => m.replace(/<script[^>]*>|<\/script>/gi, ''))
-          .join('\n');
-      }
-
-      setHtmlCode(extractedHtml);
-      setCssCode(extractedCss);
-      setJsCode(extractedJs);
+      setFullHtmlCode(text);
       setCompletedVideoUrl(null);
       setCurrentTimeMs(0);
-      setShowCodeEditor(false);
+      setIsPlaying(true);
     } catch (err) {
       alert('Could not read HTML file');
     }
     e.target.value = '';
   };
 
-  // Load 3D Comparison Demo
-  const handleLoadDemo = () => {
-    setHtmlCode(SAMPLE_PROJECTS[0].htmlContent);
-    setCssCode(SAMPLE_PROJECTS[0].cssContent);
-    setJsCode(SAMPLE_PROJECTS[0].jsContent);
+  const handleCopyCode = () => {
+    navigator.clipboard.writeText(fullHtmlCode);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
+
+  const handlePasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && text.trim().length > 0) {
+        setFullHtmlCode(text);
+        setCompletedVideoUrl(null);
+        setCurrentTimeMs(0);
+      }
+    } catch (e) {
+      alert('Please paste directly into the editor box');
+    }
+  };
+
+  const handleResetDefaultScript = () => {
+    setFullHtmlCode(DEFAULT_FULL_HTML_SCRIPT);
     setDuration(46);
     setCompletedVideoUrl(null);
     setCurrentTimeMs(0);
@@ -158,7 +157,7 @@ export default function App() {
     setCompletedVideoUrl(null);
 
     const exportSettings: ExportSettings = {
-      filename: `html_video_${duration}s_${selectedResolution.width}p`,
+      filename: `video_${duration}s_${selectedResolution.width}p`,
       resolution: selectedResolution,
       aspectRatio,
       fps,
@@ -174,11 +173,8 @@ export default function App() {
     const engine = new DirectFrameCaptureEngine();
 
     try {
-      // Connect directly to the visible in-place iframe for 100% active layout
       await engine.init(
-        htmlCode,
-        cssCode,
-        jsCode,
+        fullHtmlCode,
         selectedResolution.width,
         selectedResolution.height,
         fps,
@@ -195,7 +191,7 @@ export default function App() {
         }
       );
 
-      // When the exact duration completes, stop scanning and set completed video
+      // Scanning stops exactly when the target duration is reached
       const url = URL.createObjectURL(result.blob);
       setCompletedVideoUrl(url);
       setCompletedFileSize(result.fileSizeBytes);
@@ -229,7 +225,7 @@ export default function App() {
     if (!completedVideoUrl) return;
     const a = document.createElement('a');
     a.href = completedVideoUrl;
-    a.download = `html_video_${duration}s_${selectedResolution.width}p.mp4`;
+    a.download = `rendered_${duration}s_${selectedResolution.width}p.mp4`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -238,18 +234,18 @@ export default function App() {
   const getAspectClass = () => {
     switch (aspectRatio) {
       case '9:16':
-        return 'aspect-[9/16] max-h-[65vh] max-w-[340px]';
+        return 'aspect-[9/16] max-h-[66vh] max-w-[340px]';
       case '1:1':
-        return 'aspect-square max-h-[65vh] max-w-[500px]';
+        return 'aspect-square max-h-[66vh] max-w-[500px]';
       case '16:9':
       default:
-        return 'aspect-video max-h-[65vh] max-w-full';
+        return 'aspect-video max-h-[66vh] max-w-full';
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-sky-500/30">
-      {/* Hidden file input */}
+      {/* Hidden file inputs */}
       <input
         type="file"
         ref={fileInputRef}
@@ -257,19 +253,26 @@ export default function App() {
         className="hidden"
         onChange={handleFileUpload}
       />
+      <input
+        type="file"
+        ref={fullViewerFileInputRef}
+        accept=".html,.htm"
+        className="hidden"
+        onChange={handleFileUpload}
+      />
 
-      {/* Mobile Header Bar */}
-      <header className="sticky top-0 z-30 flex items-center justify-between px-4 py-3 bg-slate-950/95 border-b border-slate-900 backdrop-blur-md">
+      {/* Mobile App Header */}
+      <header className="sticky top-0 z-30 flex items-center justify-between px-3 sm:px-4 py-2.5 bg-slate-950/95 border-b border-slate-900 backdrop-blur-md">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center">
             <Film className="w-4 h-4" />
           </div>
           <div>
-            <h1 className="text-sm font-bold text-white tracking-tight leading-tight">
+            <h1 className="text-sm font-bold text-white tracking-tight leading-none">
               HTML to MP4
             </h1>
             <span className="text-[10px] text-sky-400 font-mono tracking-wider">
-              FAST CONVERTER
+              FULL SCRIPT RENDERER
             </span>
           </div>
         </div>
@@ -280,49 +283,24 @@ export default function App() {
             className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors border border-slate-700/80"
           >
             <Upload className="w-3.5 h-3.5 text-sky-400" />
-            <span>Upload HTML</span>
+            <span className="hidden sm:inline">Upload</span>
+            <span>HTML</span>
           </button>
           <button
-            onClick={() => setShowCodeEditor(!showCodeEditor)}
-            className="flex items-center gap-1 px-2 py-1.5 text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg transition-colors border border-slate-800"
+            onClick={() => setIsFullViewerOpen(true)}
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 rounded-lg transition-colors border border-sky-500/30"
           >
-            <Code className="w-3.5 h-3.5" />
-            <span>{showCodeEditor ? 'Hide Code' : 'Paste Code'}</span>
+            <Maximize2 className="w-3.5 h-3.5" />
+            <span>Full Viewer</span>
           </button>
         </div>
       </header>
 
       {/* Main Single-Screen Mobile Content */}
-      <main className="flex-1 w-full max-w-3xl mx-auto px-3 sm:px-4 py-3 space-y-3">
-        {/* Collapsible HTML / CSS / JS Paste Area */}
-        {showCodeEditor && (
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-2.5 shadow-lg animate-in fade-in duration-150">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-white">Paste Raw HTML Code</span>
-              <button
-                onClick={handleLoadDemo}
-                className="text-[11px] text-sky-400 hover:text-sky-300 font-medium underline"
-              >
-                Load 46s 3D Demo
-              </button>
-            </div>
-            <textarea
-              value={htmlCode}
-              onChange={(e) => {
-                setHtmlCode(e.target.value);
-                setCompletedVideoUrl(null);
-              }}
-              placeholder="Paste HTML, Canvas, or WebGL animation markup here..."
-              rows={4}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-sky-500 resize-none"
-              spellCheck={false}
-            />
-          </div>
-        )}
-
-        {/* Video Settings (Compact Mobile Strip) */}
-        <div className="bg-slate-900/90 border border-slate-800/80 rounded-xl p-2.5 sm:p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-          {/* Duration Selector */}
+      <main className="flex-1 w-full max-w-3xl mx-auto px-2.5 sm:px-4 py-3 space-y-3">
+        {/* Settings Strip */}
+        <div className="bg-slate-900/90 border border-slate-800/80 rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+          {/* Duration Selector (46s default / exact seconds) */}
           <div className="flex items-center gap-1.5">
             <span className="text-slate-400 font-medium">Duration:</span>
             <div className="flex items-center gap-1">
@@ -360,7 +338,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Resolution & Aspect */}
+          {/* Resolution & FPS */}
           <div className="flex items-center gap-2">
             <select
               value={selectedResolution.id}
@@ -388,10 +366,10 @@ export default function App() {
           </div>
         </div>
 
-        {/* Live Stage & Video Scanner (Zero Border, Zero Edge, Pure Video Canvas) */}
+        {/* Live Stage & Video Scanner (Zero Border, Zero Edge, Pure Full Bleed) */}
         <div className="relative w-full bg-black rounded-xl overflow-hidden shadow-2xl flex items-center justify-center min-h-[260px] sm:min-h-[400px]">
           {completedVideoUrl ? (
-            /* Finished Playable Video View */
+            /* Finished Playable Video */
             <div className={`relative w-full ${getAspectClass()} bg-black flex items-center justify-center`}>
               <video
                 src={completedVideoUrl}
@@ -403,12 +381,12 @@ export default function App() {
               />
             </div>
           ) : (
-            /* Live Running HTML Code Stage */
+            /* Live Running HTML Script Stage */
             <div className={`relative w-full ${getAspectClass()} bg-black flex items-center justify-center`}>
               <iframe
                 ref={iframeRef}
                 srcDoc={bundledHtml}
-                title="HTML Stage"
+                title="HTML Full Script Stage"
                 className="w-full h-full border-0 p-0 m-0 block bg-black"
                 sandbox="allow-scripts allow-same-origin"
               />
@@ -455,7 +433,7 @@ export default function App() {
             </div>
           )}
 
-          {/* Current Live Time Badge */}
+          {/* Floating Time Tag */}
           {!isScanning && !completedVideoUrl && (
             <div className="absolute bottom-2.5 left-2.5 px-2 py-0.5 rounded bg-black/75 backdrop-blur font-mono text-[10px] text-white pointer-events-none">
               {(currentTimeMs / 1000).toFixed(1)}s / {duration}.0s ({Math.floor(currentTimeMs / frameIntervalMs)} / {totalFrames} f)
@@ -472,7 +450,7 @@ export default function App() {
                 <CheckCircle2 className="w-5 h-5" />
               </div>
               <div>
-                <span className="text-xs font-bold text-white block">Conversion Finished!</span>
+                <span className="text-xs font-bold text-white block">Conversion Complete!</span>
                 <span className="text-[11px] text-slate-300 font-mono">
                   {selectedResolution.width}×{selectedResolution.height} · {duration}s · {(completedFileSize / (1024 * 1024)).toFixed(1)} MB
                 </span>
@@ -496,7 +474,7 @@ export default function App() {
             </div>
           </div>
         ) : (
-          /* Ready to Convert: Big Mobile Button */
+          /* Ready to Convert Button */
           <div className="pt-1">
             <button
               onClick={handleStartConversion}
@@ -513,6 +491,99 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Full HTML Code Viewer Modal Mode */}
+      {isFullViewerOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col animate-in fade-in duration-150">
+          {/* Full Viewer Header */}
+          <div className="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800">
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-sky-400" />
+              <span className="text-sm font-bold text-white">Full HTML Script Viewer</span>
+              <span className="text-xs text-slate-400 font-mono">
+                ({fullHtmlCode.split('\n').length} lines · {(fullHtmlCode.length / 1024).toFixed(1)} KB)
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => fullViewerFileInputRef.current?.click()}
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors border border-slate-700"
+              >
+                <Upload className="w-3.5 h-3.5 text-sky-400" />
+                <span>Upload</span>
+              </button>
+              <button
+                onClick={handleCopyCode}
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors border border-slate-700"
+              >
+                {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedCode ? 'Copied' : 'Copy'}</span>
+              </button>
+              <button
+                onClick={handleResetDefaultScript}
+                className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors border border-slate-700"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Reset 46s Demo</span>
+              </button>
+              <button
+                onClick={() => {
+                  setIsFullViewerOpen(false);
+                  setCompletedVideoUrl(null);
+                  setCurrentTimeMs(0);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition-colors shadow-sm"
+              >
+                <Play className="w-3.5 h-3.5" />
+                <span>Run & View Animation</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Full Viewer Textarea with Line Numbers */}
+          <div className="flex-1 flex overflow-hidden bg-slate-950 font-mono text-xs">
+            {/* Line numbers gutter */}
+            <div className="hidden sm:block select-none py-3 px-3 text-right text-slate-600 bg-slate-950/80 border-r border-slate-900 overflow-hidden font-mono text-[11px] leading-5">
+              {Array.from({ length: Math.min(500, fullHtmlCode.split('\n').length) }).map((_, i) => (
+                <div key={i}>{i + 1}</div>
+              ))}
+            </div>
+
+            {/* Code editor */}
+            <textarea
+              value={fullHtmlCode}
+              onChange={(e) => {
+                setFullHtmlCode(e.target.value);
+                setCompletedVideoUrl(null);
+              }}
+              placeholder="Paste complete HTML code here (including <!DOCTYPE html>, <head>, <style>, <script>, <body>)..."
+              className="flex-1 w-full h-full p-4 bg-transparent text-slate-100 font-mono text-xs leading-5 focus:outline-none resize-none selection:bg-sky-500/30 overflow-auto"
+              spellCheck={false}
+              autoCapitalize="none"
+              autoComplete="off"
+              autoCorrect="off"
+            />
+          </div>
+
+          {/* Full Viewer Bottom Action Bar */}
+          <div className="flex items-center justify-between px-4 py-2.5 bg-slate-900 border-t border-slate-800 text-xs">
+            <span className="text-slate-400">
+              Any complete HTML/CSS/Canvas/WebGL script is executed natively without slicing.
+            </span>
+            <button
+              onClick={() => {
+                setIsFullViewerOpen(false);
+                setCompletedVideoUrl(null);
+                setCurrentTimeMs(0);
+              }}
+              className="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-lg transition-colors"
+            >
+              Done & Run
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

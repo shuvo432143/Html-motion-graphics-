@@ -3,9 +3,7 @@ import { buildRenderableHtml } from './deterministicTimeline';
 
 export interface FrameCaptureEngine {
   init(
-    html: string,
-    css: string,
-    js: string,
+    fullHtmlScript: string,
     width: number,
     height: number,
     fps: number,
@@ -24,9 +22,7 @@ export class DirectFrameCaptureEngine implements FrameCaptureEngine {
   private isExternalIframe: boolean = false;
 
   async init(
-    html: string,
-    css: string,
-    js: string,
+    fullHtmlScript: string,
     width: number,
     height: number,
     fps: number,
@@ -49,7 +45,6 @@ export class DirectFrameCaptureEngine implements FrameCaptureEngine {
     if (existingIframe && existingIframe.contentDocument) {
       this.isExternalIframe = true;
       this.iframe = existingIframe;
-      // Setup deterministic mode on existing visible iframe
       const win = existingIframe.contentWindow as any;
       if (win && win.__HTML_VIDEO_STUDIO__) {
         win.__HTML_VIDEO_STUDIO__.setControlledMode(true);
@@ -58,7 +53,6 @@ export class DirectFrameCaptureEngine implements FrameCaptureEngine {
       return this.iframe;
     }
 
-    // Otherwise create dedicated visible rendering frame
     this.isExternalIframe = false;
     this.iframe = document.createElement('iframe');
     this.iframe.style.position = 'fixed';
@@ -72,14 +66,14 @@ export class DirectFrameCaptureEngine implements FrameCaptureEngine {
     this.iframe.style.pointerEvents = 'none';
     document.body.appendChild(this.iframe);
 
-    const fullHtml = buildRenderableHtml(html, css, js, true, fps);
+    const bundledHtml = buildRenderableHtml(fullHtmlScript, '', '', true, fps);
 
     await new Promise<void>((resolve) => {
       if (!this.iframe) return resolve();
       this.iframe.onload = () => {
         setTimeout(resolve, 200);
       };
-      this.iframe.srcdoc = fullHtml;
+      this.iframe.srcdoc = bundledHtml;
     });
 
     if (this.iframe && this.iframe.contentWindow) {
@@ -104,7 +98,7 @@ export class DirectFrameCaptureEngine implements FrameCaptureEngine {
     const win = this.iframe.contentWindow as any;
     const doc = this.iframe.contentDocument;
 
-    // 1. Step deterministic time in iframe
+    // 1. Advance deterministic clock
     if (win.__HTML_VIDEO_STUDIO__ && typeof win.__HTML_VIDEO_STUDIO__.stepTo === 'function') {
       win.__HTML_VIDEO_STUDIO__.stepTo(timeMs, frameIndex);
     }
@@ -115,32 +109,32 @@ export class DirectFrameCaptureEngine implements FrameCaptureEngine {
 
     this.masterCtx.clearRect(0, 0, this.width, this.height);
 
-    // 2. Check for stage canvas (WebGL, 2D, Three.js)
+    // 2. Check for canvas in the document (2D, WebGL, Three.js)
     const stageCanvas = doc.querySelector('canvas') as HTMLCanvasElement | null;
-    let canvasDrawn = false;
+    let frameDrawn = false;
 
     if (stageCanvas) {
-      // Ensure canvas has valid dimensions
       if (stageCanvas.width <= 0 || stageCanvas.height <= 0) {
         stageCanvas.width = win.innerWidth || this.width;
         stageCanvas.height = win.innerHeight || this.height;
-        if (win.renderFrame) {
-          try { win.renderFrame(timeMs); } catch (e) {}
-        }
+      }
+
+      if (typeof win.renderFrame === 'function') {
+        try { win.renderFrame(timeMs); } catch (e) {}
       }
 
       if (stageCanvas.width > 0 && stageCanvas.height > 0) {
         try {
           this.masterCtx.drawImage(stageCanvas, 0, 0, this.width, this.height);
-          canvasDrawn = true;
+          frameDrawn = true;
         } catch (err) {
           console.warn('[HTML Video Studio] Canvas draw failed:', err);
         }
       }
     }
 
-    // 3. If there are DOM elements (or no canvas was drawn), capture DOM using html2canvas
-    if (!canvasDrawn && doc.body) {
+    // 3. If no canvas, capture DOM using html2canvas
+    if (!frameDrawn && doc.body) {
       try {
         const domCanvas = await html2canvas(doc.body, {
           width: win.innerWidth || this.width,
@@ -151,13 +145,12 @@ export class DirectFrameCaptureEngine implements FrameCaptureEngine {
           backgroundColor: '#000000',
         });
         this.masterCtx.drawImage(domCanvas, 0, 0, this.width, this.height);
-        canvasDrawn = true;
+        frameDrawn = true;
       } catch (domErr) {
         console.warn('[HTML Video Studio] html2canvas capture failed:', domErr);
       }
     }
 
-    // 4. Return the rendered masterCanvas directly with crisp zero-border output
     return this.masterCanvas;
   }
 

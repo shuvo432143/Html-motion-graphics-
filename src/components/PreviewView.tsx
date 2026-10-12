@@ -199,8 +199,6 @@ export const PreviewView: React.FC<PreviewViewProps> = ({
       // Use the visible active iframe directly for 100% layout and zero blank screens!
       await engine.init(
         project.htmlContent,
-        project.cssContent,
-        project.jsContent,
         selectedResolution.width,
         selectedResolution.height,
         fps,
