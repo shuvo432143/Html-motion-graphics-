@@ -9,6 +9,17 @@ export const INJECTED_DETERMINISTIC_SCRIPT = `
   if (window.__HTML_VIDEO_STUDIO_INITIALIZED__) return;
   window.__HTML_VIDEO_STUDIO_INITIALIZED__ = true;
 
+  // 1. Ensure WebGL maintains drawing buffer for canvas frame capture
+  try {
+    var origGetContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function(type, attributes) {
+      if (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl') {
+        attributes = Object.assign({}, attributes, { preserveDrawingBuffer: true });
+      }
+      return origGetContext.call(this, type, attributes);
+    };
+  } catch(e) {}
+
   var virtualTimeMs = 0;
   var virtualFrameIndex = 0;
   var rafCallbacks = [];
@@ -22,11 +33,29 @@ export const INJECTED_DETERMINISTIC_SCRIPT = `
     setControlledMode: function(controlled) {
       isControlledMode = controlled;
     },
+    detectDuration: function() {
+      var maxSec = 0;
+      if (document.getAnimations) {
+        document.getAnimations().forEach(function(a) {
+          try {
+            var d = a.effect && a.effect.getTiming ? a.effect.getTiming().duration : 0;
+            if (typeof d === 'number' && d > 0 && d < 3600000) {
+              maxSec = Math.max(maxSec, d / 1000);
+            }
+          } catch(e) {}
+        });
+      }
+      var v = document.querySelector('video');
+      if (v && v.duration && !isNaN(v.duration)) {
+        maxSec = Math.max(maxSec, v.duration);
+      }
+      return maxSec;
+    },
     stepTo: function(timeMs, frameIndex) {
       virtualTimeMs = timeMs;
       virtualFrameIndex = frameIndex;
 
-      // 1. Advance CSS Web Animations API
+      // Advance CSS Web Animations API
       if (document.getAnimations) {
         var animations = document.getAnimations();
         for (var i = 0; i < animations.length; i++) {
@@ -36,7 +65,7 @@ export const INJECTED_DETERMINISTIC_SCRIPT = `
         }
       }
 
-      // 2. Dispatch Custom Event for Canvas / WebGL / Three.js
+      // Dispatch Custom Event for Canvas / WebGL / Three.js
       var event = new CustomEvent('htmlVideoStudioTick', {
         detail: {
           timeMs: timeMs,
@@ -47,7 +76,7 @@ export const INJECTED_DETERMINISTIC_SCRIPT = `
       });
       window.dispatchEvent(event);
 
-      // 3. Direct function hook if user declared window.renderFrame or window.onStudioTick
+      // Direct function hook if user declared window.renderFrame or window.onStudioTick
       if (typeof window.renderFrame === 'function') {
         try { window.renderFrame(timeMs); } catch(e) {}
       }
@@ -55,7 +84,7 @@ export const INJECTED_DETERMINISTIC_SCRIPT = `
         try { window.onStudioTick(timeMs, frameIndex); } catch(e) {}
       }
 
-      // 4. Execute queued requestAnimationFrame callbacks
+      // Execute queued requestAnimationFrame callbacks
       var currentCallbacks = rafCallbacks.slice();
       rafCallbacks = [];
       for (var j = 0; j < currentCallbacks.length; j++) {
@@ -66,7 +95,7 @@ export const INJECTED_DETERMINISTIC_SCRIPT = `
         }
       }
 
-      // 5. Update any standard HTML5 video elements if present
+      // Update any standard HTML5 video elements if present
       var videos = document.querySelectorAll('video');
       for (var v = 0; v < videos.length; v++) {
         try {
@@ -117,7 +146,6 @@ export const INJECTED_DETERMINISTIC_SCRIPT = `
     window.__HTML_VIDEO_STUDIO__.setControlledMode(true);
     window.__HTML_VIDEO_STUDIO__.stepTo(targetMs, fIndex);
 
-    // Reply that frame render is complete
     window.parent.postMessage({
       type: 'HVS_FRAME_READY',
       frameIndex: fIndex,
@@ -138,7 +166,7 @@ export const INJECTED_DETERMINISTIC_SCRIPT = `
 `;
 
 /**
- * Builds a bundled HTML document embedding user CSS, JS, Assets, and the Deterministic Controller
+ * Builds a bundled HTML document embedding user CSS, JS, and Deterministic Controller
  */
 export function buildRenderableHtml(
   htmlContent: string,
@@ -155,8 +183,8 @@ export function buildRenderableHtml(
       padding: 0 !important;
       border: none !important;
       outline: none !important;
-      width: 100% !important;
-      height: 100% !important;
+      width: 100vw !important;
+      height: 100vh !important;
       overflow: hidden !important;
       background: #000;
     }
@@ -179,13 +207,12 @@ export function buildRenderableHtml(
     return result;
   }
 
-  // Otherwise, wrap in standard HTML structure
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Render Document</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Render Stage</title>
   ${scriptTag}
   ${styleTag}
 </head>
