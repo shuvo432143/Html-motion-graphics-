@@ -1,0 +1,7 @@
+{
+  "name": "HTML Video Studio — 4K MP4 Renderer",
+  "description": "Advanced Android HTML-to-MP4 video renderer and video production studio for CSS animations, Canvas, SVG, and WebGL Three.js 3D scenes with deterministic frame capture and real H.264 MP4 export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
